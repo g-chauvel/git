@@ -514,4 +514,75 @@ test_expect_success 'merging should fail with no merge base' '
 	)
 '
 
+test_submodule_commit_graph_merge () {
+	git init "$1" &&
+	(
+		cd "$1" &&
+		if test "$2" -gt 0
+		then
+			test_commit_bulk --id=super "$2"
+		fi &&
+
+		mkdir sub &&
+		git init sub &&
+		test_commit_bulk -C sub --id=child 40 &&
+		git -C sub rev-list --reverse HEAD >child-commits &&
+		# Commit-graph positions follow OID order, not history order.
+		# Exclude positions 0..2 and commits whose parent has one, so
+		# parsing a parent in the small superproject graph goes out of range.
+		sort child-commits | head -n 3 >lowest-oids &&
+
+		previous= &&
+		while read oid
+		do
+			if test -n "$previous" &&
+			   ! grep -qx "$oid" lowest-oids &&
+			   ! grep -qx "$previous" lowest-oids
+			then
+				echo "$oid"
+			fi &&
+			previous=$oid || exit 1
+		done <child-commits >candidates &&
+
+		base_child=$(sed -n 1p candidates) &&
+		ours_child=$(sed -n 2p candidates) &&
+		theirs_child=$(tail -n 1 candidates) &&
+
+		git -C sub checkout --detach "$base_child" &&
+		git add sub &&
+		git commit -m base &&
+		base_super=$(git rev-parse HEAD) &&
+
+		git switch -c ours &&
+		git -C sub checkout --detach "$ours_child" &&
+		git add sub &&
+		git commit -m ours &&
+
+		git switch -c theirs "$base_super" &&
+		git -C sub checkout --detach "$theirs_child" &&
+		git add sub &&
+		git commit -m theirs &&
+
+		git switch ours &&
+		git -C sub checkout --detach "$ours_child" &&
+		git commit-graph write --reachable &&
+		git -C sub commit-graph write --reachable &&
+		git commit-graph verify &&
+		git -C sub commit-graph verify &&
+
+		git merge --no-ff theirs -m merge &&
+		git rev-parse HEAD:sub >actual &&
+		echo "$theirs_child" >expect &&
+		test_cmp expect actual
+	)
+}
+
+test_expect_success 'submodule positions beyond superproject graph' '
+	test_submodule_commit_graph_merge commit-graph-repository-context 0
+'
+
+test_expect_success 'submodule positions within superproject graph' '
+	test_submodule_commit_graph_merge commit-graph-repository-context-in-range 40
+'
+
 test_done
