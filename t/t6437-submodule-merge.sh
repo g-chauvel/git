@@ -514,4 +514,53 @@ test_expect_success 'merging should fail with no merge base' '
 	)
 '
 
+# The delta base cache is process-wide. Its entries must not survive closing a
+# submodule pack, since another submodule's pack can reuse the same address.
+test_expect_success 'delta base cache does not mix submodule commits' '
+	mkdir cache-lifetime &&
+	(
+		cd cache-lifetime &&
+		create_source () {
+			name=$1 &&
+			git init -q "source-$name" &&
+			printf "%s base\n" "$name" >"source-$name/file" &&
+			git -C "source-$name" add file &&
+			git -C "source-$name" commit -qm "$name base" &&
+			git -C "source-$name" rev-parse HEAD >"$name.base" &&
+			tree=$(git -C "source-$name" rev-parse "HEAD^{tree}") &&
+			printf "%s release\n" "$name" |
+			git -C "source-$name" commit-tree "$tree" -p "$(cat "$name.base")" >"$name.release" &&
+			printf "%s toto\n" "$name" |
+			git -C "source-$name" commit-tree "$tree" -p "$(cat "$name.base")" >"$name.toto" &&
+			git -C "source-$name" update-ref refs/heads/release-tip "$(cat "$name.release")" &&
+			git -C "source-$name" update-ref refs/heads/toto-tip "$(cat "$name.toto")"
+		} &&
+		create_source E &&
+		create_source F &&
+		git init -q super &&
+		git -C super -c protocol.file.allow=always submodule add -q "file://$PWD/source-E" E &&
+		git -C super -c protocol.file.allow=always submodule add -q "file://$PWD/source-F" F &&
+		git -C super/E checkout -q "$(cat E.base)" &&
+		git -C super/F checkout -q "$(cat F.base)" &&
+		git -C super add . &&
+		git -C super commit -qm base &&
+		base=$(git -C super rev-parse HEAD) &&
+		git -C super switch -qc release "$base" &&
+		git -C super update-index --add --cacheinfo "160000,$(cat E.release),E" &&
+		git -C super update-index --add --cacheinfo "160000,$(cat F.release),F" &&
+		git -C super commit -qm release &&
+		release=$(git -C super rev-parse HEAD) &&
+		git -C super switch -qc toto "$base" &&
+		git -C super update-index --add --cacheinfo "160000,$(cat E.toto),E" &&
+		git -C super update-index --add --cacheinfo "160000,$(cat F.toto),F" &&
+		git -C super commit -qm toto &&
+		toto=$(git -C super rev-parse HEAD) &&
+		git -c protocol.file.allow=always clone -q --no-local "file://$PWD/super" clone &&
+		git -C clone -c protocol.file.allow=always submodule update --init -q &&
+		git -C clone switch -qc release "$release" &&
+		test_must_fail git -C clone merge "$toto" >actual 2>&1 &&
+		test_grep "CONFLICT (submodule): Merge conflict in E" actual &&
+		test_grep "CONFLICT (submodule): Merge conflict in F" actual
+	)
+'
 test_done
