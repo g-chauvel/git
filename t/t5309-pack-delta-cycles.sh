@@ -105,4 +105,35 @@ test_expect_success 'index-pack works with thin pack A->B->C with B on disk' '
 	)
 '
 
+# The delta base cache is process-wide. Closing a pack must evict its entries
+# before the same packed_git address is used for another pack.
+test_expect_success 'delta base cache entries do not outlive their pack' '
+	mkdir cache-lifetime &&
+	(
+		cd cache-lifetime &&
+		create_source () {
+			name=$1 &&
+			git init -q "source-$name" &&
+			printf "%s base\n" "$name" >"source-$name/file" &&
+			git -C "source-$name" add file &&
+			git -C "source-$name" commit -qm "$name base" &&
+			git -C "source-$name" rev-parse HEAD >"$name.base" &&
+			tree=$(git -C "source-$name" rev-parse "HEAD^{tree}") &&
+			printf "%s release\n" "$name" |
+			git -C "source-$name" commit-tree "$tree" -p "$(cat "$name.base")" >"$name.release" &&
+			printf "%s toto\n" "$name" |
+			git -C "source-$name" commit-tree "$tree" -p "$(cat "$name.base")" >"$name.toto" &&
+			git -C "source-$name" update-ref refs/heads/release-tip "$(cat "$name.release")" &&
+			git -C "source-$name" update-ref refs/heads/toto-tip "$(cat "$name.toto")"
+		} &&
+		create_source E &&
+		create_source F &&
+		git clone -q --no-local "file://$PWD/source-E" clone-E &&
+		git clone -q --no-local "file://$PWD/source-F" clone-F &&
+		test-tool delta-base-cache \
+			"$PWD"/clone-E/.git/objects/pack/*.idx "$(cat E.toto)" \
+			"$PWD"/clone-F/.git/objects/pack/*.idx "$(cat F.toto)"
+	)
+'
+
 test_done
