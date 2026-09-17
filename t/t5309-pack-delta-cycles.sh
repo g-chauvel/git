@@ -105,4 +105,29 @@ test_expect_success 'index-pack works with thin pack A->B->C with B on disk' '
 	)
 '
 
+# The delta base cache is process-wide. Closing a pack must clear its entries
+# before the same packed_git address is used for another pack.
+test_expect_success 'delta base cache entries do not outlive their pack' '
+	cache_A=$(test_oid packlib_7_0) &&
+	cache_B=$(test_oid packlib_7_76) &&
+	clear_packs &&
+	{
+		pack_header 2 &&
+		pack_obj $cache_A &&
+		pack_obj $cache_B $cache_A
+	} >cache-A.pack &&
+	pack_trailer cache-A.pack &&
+	{
+		pack_header 2 &&
+		pack_obj $cache_B &&
+		pack_obj $cache_A $cache_B
+	} >cache-B.pack &&
+	pack_trailer cache-B.pack &&
+	git index-pack -o cache-A.idx cache-A.pack &&
+	git index-pack -o cache-B.idx cache-B.pack &&
+	test-tool delta-base-cache \
+		"$PWD/cache-A.idx" "$cache_B" \
+		"$PWD/cache-B.idx" "$cache_A"
+'
+
 test_done

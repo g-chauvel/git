@@ -223,6 +223,7 @@ static struct packed_git *alloc_packed_git(struct repository *r, int extra)
 	memset(p, 0, sizeof(*p));
 	p->pack_fd = -1;
 	p->repo = r;
+	INIT_LIST_HEAD(&p->delta_base_cache);
 	return p;
 }
 
@@ -298,6 +299,8 @@ static int unuse_one_window(struct object_database *odb)
 	return 0;
 }
 
+static void clear_delta_base_cache_for_pack(struct packed_git *p);
+
 void close_pack_windows(struct packed_git *p)
 {
 	while (p->windows) {
@@ -357,6 +360,7 @@ static void close_pack_mtimes(struct packed_git *p)
 
 void close_pack(struct packed_git *p)
 {
+	clear_delta_base_cache_for_pack(p);
 	close_pack_windows(p);
 	close_pack_fd(p);
 	close_pack_index(p);
@@ -1159,6 +1163,7 @@ struct delta_base_cache_entry {
 	struct hashmap_entry ent;
 	struct delta_base_cache_key key;
 	struct list_head lru;
+	struct list_head pack;
 	void *data;
 	size_t size;
 	enum object_type type;
@@ -1226,6 +1231,7 @@ static void detach_delta_base_cache_entry(struct delta_base_cache_entry *ent)
 {
 	hashmap_remove(&delta_base_cache, &ent->ent, &ent->key);
 	list_del(&ent->lru);
+	list_del(&ent->pack);
 	delta_base_cached -= ent->size;
 	free(ent);
 }
@@ -1251,6 +1257,20 @@ static inline void release_delta_base_cache(struct delta_base_cache_entry *ent)
 {
 	free(ent->data);
 	detach_delta_base_cache_entry(ent);
+}
+
+static void clear_delta_base_cache_for_pack(struct packed_git *p)
+{
+	struct list_head *pack, *tmp;
+
+	/* Evict entries before this pack can be freed and its address reused. */
+	obj_read_lock();
+	list_for_each_safe(pack, tmp, &p->delta_base_cache) {
+		struct delta_base_cache_entry *entry =
+			list_entry(pack, struct delta_base_cache_entry, pack);
+		release_delta_base_cache(entry);
+	}
+	obj_read_unlock();
 }
 
 void clear_delta_base_cache(void)
@@ -1298,6 +1318,7 @@ static void add_delta_base_cache(struct packed_git *p, off_t base_offset,
 	ent->data = base;
 	ent->size = base_size;
 	list_add_tail(&ent->lru, &delta_base_cache_lru);
+	list_add_tail(&ent->pack, &p->delta_base_cache);
 
 	if (!delta_base_cache.cmpfn)
 		hashmap_init(&delta_base_cache, delta_base_cache_hash_cmp, NULL, 0);
