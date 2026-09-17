@@ -360,6 +360,13 @@ static void close_pack_mtimes(struct packed_git *p)
 
 void close_pack(struct packed_git *p)
 {
+	/*
+	 * Exclude new object readers while closing the pack. This does not
+	 * replace the caller's responsibility to ensure that no reader is
+	 * already using p: unpacking temporarily releases obj_read_mutex while
+	 * inflating data.
+	 */
+	obj_read_lock();
 	clear_delta_base_cache_for_pack(p);
 	close_pack_windows(p);
 	close_pack_fd(p);
@@ -367,6 +374,7 @@ void close_pack(struct packed_git *p)
 	close_pack_revindex(p);
 	close_pack_mtimes(p);
 	oidset_clear(&p->bad_objects);
+	obj_read_unlock();
 }
 
 void unlink_pack_path(const char *pack_name, int force_delete)
@@ -1264,13 +1272,11 @@ static void clear_delta_base_cache_for_pack(struct packed_git *p)
 	struct list_head *pack, *tmp;
 
 	/* Evict entries before this pack can be freed and its address reused. */
-	obj_read_lock();
 	list_for_each_safe(pack, tmp, &p->delta_base_cache) {
 		struct delta_base_cache_entry *entry =
 			list_entry(pack, struct delta_base_cache_entry, pack);
 		release_delta_base_cache(entry);
 	}
-	obj_read_unlock();
 }
 
 void clear_delta_base_cache(void)
