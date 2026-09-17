@@ -105,4 +105,43 @@ test_expect_success 'index-pack works with thin pack A->B->C with B on disk' '
 	)
 '
 
+# The delta base cache is process-wide. Closing a pack must clear its entries
+# before the same packed_git address is used for another pack.
+pack_obj_with_copy_delta () {
+	case "$1,$2" in
+	"$cache_C,$cache_B")
+		# Insert the first byte, then copy B's second byte.
+		printf '\147\013\170\001\143\142\142\144\230\310\310\010\000\001\334\000\231'
+		;;
+	*)
+		echo "BUG: cannot create a delta for $1 from $2" >&2
+		return 1
+		;;
+	esac
+}
+
+test_expect_success 'delta base cache entries do not outlive their pack' '
+	cache_A=$(test_oid packlib_7_0) &&
+	cache_B=$(test_oid packlib_7_76) &&
+	cache_C=$(printf "\\000\\076" | git hash-object --stdin) &&
+	clear_packs &&
+	{
+		pack_header 2 &&
+		pack_obj $cache_A &&
+		pack_obj $cache_B $cache_A
+	} >cache-A.pack &&
+	pack_trailer cache-A.pack &&
+	{
+		pack_header 2 &&
+		pack_obj $cache_B &&
+		pack_obj_with_copy_delta $cache_C $cache_B
+	} >cache-B.pack &&
+	pack_trailer cache-B.pack &&
+	git index-pack -o cache-A.idx cache-A.pack &&
+	git index-pack -o cache-B.idx cache-B.pack &&
+	test-tool delta-base-cache \
+		"$PWD/cache-A.idx" "$cache_B" \
+		"$PWD/cache-B.idx" "$cache_C"
+'
+
 test_done
