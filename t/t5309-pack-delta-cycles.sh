@@ -105,4 +105,39 @@ test_expect_success 'index-pack works with thin pack A->B->C with B on disk' '
 	)
 '
 
+test_expect_success 'delta base cache entries do not outlive their pack' '
+	A=$(test_oid packlib_7_0) &&
+	B=$(test_oid packlib_7_76) &&
+	C=$(test_oid packlib_0_76) &&
+	clear_packs &&
+	{
+		pack_header 2 &&
+		pack_obj $A &&
+		pack_obj $B $A
+	} >A-B.pack &&
+	pack_trailer A-B.pack &&
+	{
+		pack_header 2 &&
+		pack_obj $B &&
+		# Store C as an OFS_DELTA from B. Write it manually because
+		# pack-objects may choose a literal-only delta, which would let this
+		# regression test pass with a stale delta-base cache.
+		# The pack entry contains:
+		# \147  0x67: OBJ_OFS_DELTA, size 7
+		# \013  base entry is 11 bytes earlier:
+		#       one object-header byte plus Bs ten-byte zlib stream
+		# \170\001...\000\231 zlib stream that inflates to:
+		#   \002\002          base and result sizes
+		#   \001\000          insert C[0] (\000)
+		#   \221\001\001      copy one byte at B offset 1 (\076)
+		printf "\147\013\170\001\143\142\142\144\230\310\310\010\000\001\334\000\231"
+	} >B-C.pack &&
+	pack_trailer B-C.pack &&
+	git index-pack -o A-B.idx A-B.pack &&
+	git index-pack -o B-C.idx B-C.pack &&
+	test-tool delta-base-cache \
+		A-B.idx $B \
+		B-C.idx $C
+'
+
 test_done
