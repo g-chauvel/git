@@ -122,17 +122,13 @@ test_expect_success 'delta base cache entries do not outlive their pack' '
 		# Store C as an OFS_DELTA from B. Write it manually because
 		# pack-objects may choose a literal-only delta, which would let this
 		# regression test pass with a stale delta-base cache.
-		#
-		# B is \007\076 and C is \000\076. The pack entry contains:
-
-		# \147                    OBJ_OFS_DELTA, uncompressed size 7
+		# The pack entry contains:
+		# \147                    0x67: OBJ_OFS_DELTA, size 7
 		# \013                    base entry is 11 bytes earlier
 		# \170\001...\334\000\231 zlib stream that inflates to:
 		#   \002\002          base and result sizes
-		#   \001\000          insert C[0]
-		#   \221\001\001      copy one byte at B offset 1
-		# A stale A base (\007\000) would therefore reconstruct \000\000, not C.
-
+		#   \001\000          insert C[0] (\000)
+		#   \221\001\001      copy one byte at B offset 1 (\076)
 		printf "\147\013\170\001\143\142\142\144\230\310\310\010\000\001\334\000\231"
 	} >B-C.pack &&
 	pack_trailer B-C.pack &&
