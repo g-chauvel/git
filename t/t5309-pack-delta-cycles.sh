@@ -106,19 +106,19 @@ test_expect_success 'index-pack works with thin pack A->B->C with B on disk' '
 '
 
 test_expect_success 'delta base cache entries do not outlive their pack' '
-	cache_A=$(test_oid packlib_7_0) &&
-	cache_B=$(test_oid packlib_7_76) &&
-	cache_C=$(printf "\\000\\076" | git hash-object --stdin) &&
+	A=$(test_oid packlib_7_0) &&
+	B=$(test_oid packlib_7_76) &&
+	C=$(test_oid packlib_0_76) &&
 	clear_packs &&
 	{
 		pack_header 2 &&
-		pack_obj $cache_A &&
-		pack_obj $cache_B $cache_A
-	} >cache-A.pack &&
-	pack_trailer cache-A.pack &&
+		pack_obj $A &&
+		pack_obj $B $A
+	} >A-B.pack &&
+	pack_trailer A-B.pack &&
 	{
 		pack_header 2 &&
-		pack_obj $cache_B &&
+		pack_obj $B &&
 		# This entry is an OFS_DELTA from B:
 		#   \147                     OBJ_OFS_DELTA; 7 uncompressed delta bytes.
 		#   \013                     B starts 11 bytes before this entry.
@@ -130,13 +130,13 @@ test_expect_success 'delta base cache entries do not outlive their pack' '
 		# It must read its base. Do not use pack-objects here: it may create
 		# a literal-only delta, letting this regression test pass without the fix.
 		printf "\147\013\170\001\143\142\142\144\230\310\310\010\000\001\334\000\231"
-	} >cache-B.pack &&
-	pack_trailer cache-B.pack &&
-	git index-pack -o cache-A.idx cache-A.pack &&
-	git index-pack -o cache-B.idx cache-B.pack &&
+	} >B-C.pack &&
+	pack_trailer B-C.pack &&
+	git index-pack -o A-B.idx A-B.pack &&
+	git index-pack -o B-C.idx B-C.pack &&
 	test-tool delta-base-cache \
-		"$PWD/cache-A.idx" "$cache_B" \
-		"$PWD/cache-B.idx" "$cache_C"
+		A-B.idx $B \
+		B-C.idx $C
 '
 
 test_done
