@@ -119,11 +119,17 @@ test_expect_success 'delta base cache entries do not outlive their pack' '
 	{
 		pack_header 2 &&
 		pack_obj $cache_B &&
-		# Store C as an OFS_DELTA from B. Its delta stream inserts C[0],
-		# then copies B[1], so it must read its base. Do not use
-		# pack-objects here: it may generate a literal-only delta, which
-		# would let this regression test pass without the cache fix.
-		printf '\147\013\170\001\143\142\142\144\230\310\310\010\000\001\334\000\231'
+		# This entry is an OFS_DELTA from B:
+		#   \147                     OBJ_OFS_DELTA; 7 uncompressed delta bytes.
+		#   \013                     B starts 11 bytes before this entry.
+		#   \170\001                 zlib header.
+		#   \143...\010              DEFLATE encoding of the delta below.
+		#   \001\334\000\231        zlib Adler-32 checksum.
+		# The inflated delta is \002\002 (base and result sizes), \001\000
+		# (insert C[0]), then \221\001\001 (copy one byte at B offset 1).
+		# It must read its base. Do not use pack-objects here: it may create
+		# a literal-only delta, letting this regression test pass without the fix.
+		printf "\147\013\170\001\143\142\142\144\230\310\310\010\000\001\334\000\231"
 	} >cache-B.pack &&
 	pack_trailer cache-B.pack &&
 	git index-pack -o cache-A.idx cache-A.pack &&
