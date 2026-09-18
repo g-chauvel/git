@@ -123,10 +123,15 @@ test_expect_success 'delta base cache entries do not outlive their pack' '
 		# pack-objects may choose a literal-only delta, which would let this
 		# regression test pass with a stale delta-base cache.
 		#
-		# B is 07 3e and C is 00 3e. The inflated delta is:
-		#   \002\002          base and result sizes
-		#   \001\000          insert C[0]
-		#   \221\001\001      copy one byte at B offset 1
+		# B is \007\076 and C is \000\076. The inflated delta is:
+
+		\147                    en-tête : OBJ_OFS_DELTA, taille décompressée 7
+		\013                    base située 11 octets avant cette entrée
+		\170\001... \334\000\231 flux zlib qui se décompresse en :
+		  \002\002          base and result sizes
+		  \001\000          insert C[0]
+		  \221\001\001      copy one byte at B offset 1
+
 		# A stale A base (07 00) would therefore reconstruct 00 00, not C.
 		#
 		# \147 is an OFS_DELTA header for 7 delta bytes; \013 points
