@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Reproduce a stale delta-base-cache entry across two submodule repositories.
-# Only git merge writes output; its exit status is passed through unchanged.
+# Exit 0 when a merge of A tries to read a commit that belongs only to B.
 # The address reuse depends on malloc and may not happen on every system.
 set -euo pipefail
 
@@ -56,4 +56,22 @@ git config user.name Repro
 git config user.email repro@example.invalid
 git -c protocol.file.allow=always submodule update --init -q
 git switch -q -c branch-a --track origin/branch-a
-git merge branch-b
+if merge_output=$(git merge branch-b 2>&1); then
+	merge_status=0
+else
+	merge_status=$?
+fi
+printf 'git merge exit status: %s\n%s\n' "$merge_status" "$merge_output"
+
+if [[ $merge_output =~ Could\ not\ read\ ([0-9a-f]{40}|[0-9a-f]{64}) ]]; then
+	foreign_oid=${BASH_REMATCH[1]}
+	if ! (cd A && git cat-file -e "$foreign_oid^{commit}" 2>/dev/null) &&
+	(cd B && git cat-file -e "$foreign_oid^{commit}" 2>/dev/null); then
+		printf 'REPRODUCED: OID %s belongs to B, but Git read it in A\n' \
+			"$foreign_oid"
+		exit 0
+	fi
+fi
+
+echo 'NOT REPRODUCED: no foreign B OID was read from A'
+exit 1
