@@ -119,16 +119,18 @@ test_expect_success 'delta base cache entries do not outlive their pack' '
 	{
 		pack_header 2 &&
 		pack_obj $B &&
-		# This entry is an OFS_DELTA from B:
-		#   \147                     OBJ_OFS_DELTA; 7 uncompressed delta bytes.
-		#   \013                     B starts 11 bytes before this entry.
-		#   \170\001                 zlib header.
-		#   \143...\010              DEFLATE encoding of the delta below.
-		#   \001\334\000\231        zlib Adler-32 checksum.
-		# The inflated delta is \002\002 (base and result sizes), \001\000
-		# (insert C[0]), then \221\001\001 (copy one byte at B offset 1).
-		# It must read its base. Do not use pack-objects here: it may create
-		# a literal-only delta, letting this regression test pass without the fix.
+		# Store C as an OFS_DELTA from B. Write it manually because
+		# pack-objects may choose a literal-only delta, which would let this
+		# regression test pass with a stale delta-base cache.
+		#
+		# B is 07 3e and C is 00 3e. The inflated delta is:
+		#   \002\002          base and result sizes
+		#   \001\000          insert C[0]
+		#   \221\001\001      copy one byte at B offset 1
+		# A stale A base (07 00) would therefore reconstruct 00 00, not C.
+		#
+		# \147 is an OFS_DELTA header for 7 delta bytes; \013 points
+		# 11 bytes back to B. The remaining bytes are its zlib stream.
 		printf "\147\013\170\001\143\142\142\144\230\310\310\010\000\001\334\000\231"
 	} >B-C.pack &&
 	pack_trailer B-C.pack &&
