@@ -57,7 +57,26 @@ int cmd__delta_base_cache(int argc, const char **argv)
 	if (!data)
 		die("cannot unpack first object");
 	free(data);
+	data = unpack_entry(the_repository, second,
+			    find_pack_entry_one(&second_oid, second), NULL, NULL);
+	if (!data)
+		die("cannot unpack second object");
+	free(data);
+	if (list_empty(&first->delta_base_cache) ||
+	    list_empty(&second->delta_base_cache))
+		die("both packs must have a cached delta base");
+
 	close_pack(first);
+	if (list_empty(&second->delta_base_cache))
+		die("closing the first pack removed the second pack's cache");
+	data = unpack_entry(the_repository, second,
+			    find_pack_entry_one(&second_oid, second), &type, &size);
+	if (!data)
+		die("cannot unpack second object after closing first pack");
+	hash_object_file(the_repository->hash_algo, data, size, type, &actual_oid);
+	free(data);
+	if (!oideq(&actual_oid, &second_oid))
+		die("second object differs after closing first pack");
 
 	/*
 	 * Simulate the allocator reusing the same address for a new pack.
@@ -67,6 +86,7 @@ int cmd__delta_base_cache(int argc, const char **argv)
 	memset(first, 0, sizeof(*first));
 	first->pack_fd = -1;
 	first->repo = the_repository;
+	INIT_LIST_HEAD(&first->delta_base_cache);
 	memcpy(first->pack_name, second->pack_name,
 	       strlen(second->pack_name) + 1);
 	first->pack_size = second->pack_size;
