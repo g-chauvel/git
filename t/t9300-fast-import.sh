@@ -2601,6 +2601,31 @@ test_expect_success !MINGW 'R: print new blob by sha1' '
 	test_cmp expect actual
 '
 
+test_expect_success !MINGW 'R: cat-blob of an in-pack delta does not crash' '
+	first=$(printf "a%.0s" $(test_seq 1 199)) &&
+	second="${first%?}b" &&
+	blob=$(echo "$second" | git hash-object --stdin) &&
+	cat >expect <<-EOF &&
+	${blob} blob 200
+	${second}
+
+	EOF
+	git fast-import --depth=1 --cat-blob-fd=6 6>actual <<-EOF &&
+	blob
+	mark :1
+	data <<BLOB_END
+	$first
+	BLOB_END
+	blob
+	mark :2
+	data <<BLOB_END
+	$second
+	BLOB_END
+	cat-blob :2
+	EOF
+	test_cmp expect actual
+'
+
 test_expect_success 'setup: big file' '
 	(
 		echo "the quick brown fox jumps over the lazy dog" >big &&
