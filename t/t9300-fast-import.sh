@@ -2601,6 +2601,37 @@ test_expect_success !MINGW 'R: print new blob by sha1' '
 	test_cmp expect actual
 '
 
+test_expect_success 'R: cat-blob of an in-pack delta does not crash' '
+	git init in-pack-delta &&
+	first=$(printf "a%.0s" $(test_seq 1 199)) &&
+	second="${first%?}b" &&
+	base=$(echo "$first" | git -C in-pack-delta hash-object --stdin) &&
+	blob=$(echo "$second" | git -C in-pack-delta hash-object --stdin) &&
+	cat >expect <<-EOF &&
+	${blob} blob 200
+	${second}
+
+	EOF
+	git -C in-pack-delta -c fastimport.unpackLimit=0 fast-import \
+		--depth=1 >actual <<-EOF &&
+	blob
+	mark :1
+	data <<BLOB_END
+	$first
+	BLOB_END
+	blob
+	mark :2
+	data <<BLOB_END
+	$second
+	BLOB_END
+	cat-blob :2
+	EOF
+	test_cmp expect actual &&
+	# cat-blob would also succeed if the second blob were stored in full.
+	git verify-pack -v in-pack-delta/.git/objects/pack/*.idx >pack-objects &&
+	test_grep "^$blob blob .* 1 $base$" pack-objects
+'
+
 test_expect_success 'setup: big file' '
 	(
 		echo "the quick brown fox jumps over the lazy dog" >big &&
