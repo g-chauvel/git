@@ -67,6 +67,7 @@ int cmd__delta_base_cache(int argc, const char **argv)
 	memset(first, 0, sizeof(*first));
 	first->pack_fd = -1;
 	first->repo = the_repository;
+	INIT_LIST_HEAD(&first->delta_base_cache);
 	memcpy(first->pack_name, second->pack_name,
 	       strlen(second->pack_name) + 1);
 	close_pack(second);
