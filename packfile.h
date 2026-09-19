@@ -22,6 +22,8 @@ struct packed_git {
 	uint32_t num_objects;
 	size_t crc_offset;
 	struct oidset bad_objects;
+	/* Entries in the process-wide delta base cache for this pack. */
+	struct list_head delta_base_cache;
 	int index_version;
 	time_t mtime;
 	int pack_fd;

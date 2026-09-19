@@ -795,6 +795,7 @@ static void start_packfile(void)
 	p->pack_fd = pack_fd;
 	p->do_not_close = 1;
 	p->repo = the_repository;
+	INIT_LIST_HEAD(&p->delta_base_cache);
 	pack_file = hashfd(the_repository->hash_algo, pack_fd, p->pack_name);
 
 	pack_data = p;
