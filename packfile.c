@@ -355,6 +355,8 @@ static void close_pack_mtimes(struct packed_git *p)
 	p->mtimes_map = NULL;
 }
 
+static void delta_base_cache_evict_entry(struct packed_git *p);
+
 void close_pack(struct packed_git *p)
 {
 	close_pack_windows(p);
@@ -363,6 +365,7 @@ void close_pack(struct packed_git *p)
 	close_pack_revindex(p);
 	close_pack_mtimes(p);
 	oidset_clear(&p->bad_objects);
+	delta_base_cache_evict_entry(p);
 }
 
 void unlink_pack_path(const char *pack_name, int force_delete)
@@ -1251,6 +1254,18 @@ static inline void release_delta_base_cache(struct delta_base_cache_entry *ent)
 {
 	free(ent->data);
 	detach_delta_base_cache_entry(ent);
+}
+
+static void delta_base_cache_evict_entry(struct packed_git *p)
+{
+	struct list_head *lru, *tmp;
+
+	list_for_each_safe(lru, tmp, &delta_base_cache_lru) {
+		struct delta_base_cache_entry *entry =
+			list_entry(lru, struct delta_base_cache_entry, lru);
+		if (entry->key.p == p)
+			release_delta_base_cache(entry);
+	}
 }
 
 void clear_delta_base_cache(void)
