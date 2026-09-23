@@ -1,6 +1,6 @@
 #!/bin/sh
 
-test_description='test index-pack handling of delta cycles in packfiles'
+test_description='test packfile delta handling, including cycles and cache lifetime'
 
 . ./test-lib.sh
 . "$TEST_DIRECTORY"/lib-pack.sh
@@ -103,6 +103,55 @@ test_expect_success 'index-pack works with thin pack A->B->C with B on disk' '
 		cd client &&
 		git index-pack --fix-thin --stdin <../thin.pack
 	)
+'
+
+test_expect_success 'delta base cache entries do not outlive their pack' '
+	clear_packs &&
+	test-tool genrandom cache-prefix 1024 >prefix &&
+	test-tool genrandom cache-suffix 1024 >suffix &&
+	{
+		printf "a" &&
+		cat prefix &&
+		printf "0" &&
+		cat suffix
+	} >a &&
+	{
+		printf "b" &&
+		cat prefix &&
+		printf "1" &&
+		cat suffix
+	} >b &&
+	{
+		printf "c" &&
+		cat prefix &&
+		printf "1" &&
+		cat suffix
+	} >c &&
+	A=$(git hash-object -w a) &&
+	B=$(git hash-object -w b) &&
+	C=$(git hash-object -w c) &&
+
+	# The delta from B to C must copy bytes where A differs from B.
+	# Otherwise a stale base from the first pack could still produce C.
+	test-tool delta -d b c b-c.delta &&
+	test-tool delta -p b b-c.delta reconstructed &&
+	test_cmp_bin c reconstructed &&
+	test-tool delta -p a b-c.delta stale &&
+	! cmp -s c stale &&
+
+	test-tool pack-deltas --num-objects=2 >A-B.pack <<-EOF &&
+	FULL $A
+	REF_DELTA $B $A
+	EOF
+	test-tool pack-deltas --num-objects=2 >B-C.pack <<-EOF &&
+	FULL $B
+	REF_DELTA $C $B
+	EOF
+	git index-pack -o A-B.idx A-B.pack &&
+	git index-pack -o B-C.idx B-C.pack &&
+	test-tool delta-base-cache \
+		A-B.idx $B \
+		B-C.idx $C
 '
 
 test_done
