@@ -11,6 +11,7 @@ test_tool_sources = [
   'test-csprng.c',
   'test-date.c',
   'test-delete-gpgsig.c',
+  'test-delta-base-cache.c',
   'test-delta.c',
   'test-dir-iterator.c',
   'test-drop-caches.c',
