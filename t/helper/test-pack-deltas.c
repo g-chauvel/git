@@ -43,6 +43,25 @@ static unsigned long do_compress(void **pptr, unsigned long size)
 	return stream.total_out;
 }
 
+static void write_full(struct hashfile *f, struct object_id *oid)
+{
+	unsigned char header[MAX_PACK_OBJECT_HEADER];
+	unsigned long compressed_size, hdrlen;
+	size_t size;
+	enum object_type type;
+	void *buf = odb_read_object(the_repository->objects, oid, &type, &size);
+
+	if (!buf)
+		die("unable to read %s", oid_to_hex(oid));
+
+	compressed_size = do_compress(&buf, cast_size_t_to_ulong(size));
+	hdrlen = encode_in_pack_object_header(header, sizeof(header),
+					      type, size);
+	hashwrite(f, header, hdrlen);
+	hashwrite(f, buf, compressed_size);
+	free(buf);
+}
+
 static void write_ref_delta(struct hashfile *f,
 			    struct object_id *oid,
 			    struct object_id *base)
@@ -136,7 +155,7 @@ int cmd__pack_deltas(int argc, const char **argv)
 		else if (!strcmp(type_str, "OFS_DELTA"))
 			die("OFS_DELTA not implemented");
 		else if (!strcmp(type_str, "FULL"))
-			die("FULL not implemented");
+			write_full(f, &content_oid);
 		else
 			die("unknown pack type: %s", type_str);
 	}
