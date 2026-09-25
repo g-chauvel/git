@@ -355,8 +355,11 @@ static void close_pack_mtimes(struct packed_git *p)
 	p->mtimes_map = NULL;
 }
 
+static void clear_delta_base_cache_for_pack(struct packed_git *p);
+
 void close_pack(struct packed_git *p)
 {
+	clear_delta_base_cache_for_pack(p);
 	close_pack_windows(p);
 	close_pack_fd(p);
 	close_pack_index(p);
@@ -1212,7 +1215,7 @@ static int delta_base_cache_hash_cmp(const void *cmp_data UNUSED,
 		return !delta_base_cache_key_eq(&a->key, &b->key);
 }
 
-static int in_delta_base_cache(struct packed_git *p, off_t base_offset)
+int in_delta_base_cache(struct packed_git *p, off_t base_offset)
 {
 	return !!get_delta_base_cache_entry(p, base_offset);
 }
@@ -1251,6 +1254,19 @@ static inline void release_delta_base_cache(struct delta_base_cache_entry *ent)
 {
 	free(ent->data);
 	detach_delta_base_cache_entry(ent);
+}
+
+static void clear_delta_base_cache_for_pack(struct packed_git *p)
+{
+	struct list_head *lru, *tmp;
+
+	/* Drop entries before p is freed and its address reused. */
+	list_for_each_safe(lru, tmp, &delta_base_cache_lru) {
+		struct delta_base_cache_entry *entry =
+			list_entry(lru, struct delta_base_cache_entry, lru);
+		if (entry->key.p == p)
+			release_delta_base_cache(entry);
+	}
 }
 
 void clear_delta_base_cache(void)
