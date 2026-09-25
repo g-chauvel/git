@@ -357,6 +357,7 @@ static void close_pack_mtimes(struct packed_git *p)
 
 void close_pack(struct packed_git *p)
 {
+	clear_delta_base_cache();
 	close_pack_windows(p);
 	close_pack_fd(p);
 	close_pack_index(p);
@@ -1212,7 +1213,7 @@ static int delta_base_cache_hash_cmp(const void *cmp_data UNUSED,
 		return !delta_base_cache_key_eq(&a->key, &b->key);
 }
 
-static int in_delta_base_cache(struct packed_git *p, off_t base_offset)
+int in_delta_base_cache(struct packed_git *p, off_t base_offset)
 {
 	return !!get_delta_base_cache_entry(p, base_offset);
 }
