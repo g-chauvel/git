@@ -1,6 +1,6 @@
 #!/bin/sh
 
-test_description='test index-pack handling of delta cycles in packfiles'
+test_description='test packfile delta handling, including cycles and cache lifetime'
 
 . ./test-lib.sh
 . "$TEST_DIRECTORY"/lib-pack.sh
@@ -103,6 +103,19 @@ test_expect_success 'index-pack works with thin pack A->B->C with B on disk' '
 		cd client &&
 		git index-pack --fix-thin --stdin <../thin.pack
 	)
+'
+
+test_expect_success 'delta base cache entries do not outlive their pack' '
+	cache_A=$(test_oid packlib_7_0) &&
+	cache_B=$(test_oid packlib_7_76) &&
+	{
+		pack_header 2 &&
+		pack_obj "$cache_A" &&
+		pack_obj "$cache_B" "$cache_A"
+	} >cache.pack &&
+	pack_trailer cache.pack &&
+	git index-pack -o cache.idx cache.pack &&
+	test-tool delta-base-cache cache.idx "$cache_B"
 '
 
 test_done

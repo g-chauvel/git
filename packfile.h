@@ -244,6 +244,7 @@ void close_pack_windows(struct packed_git *);
 void close_pack(struct packed_git *);
 void unuse_pack(struct pack_window **);
 void clear_delta_base_cache(void);
+int delta_base_cache_has_address(uintptr_t pack_address, off_t base_offset);
 struct packed_git *add_packed_git(struct repository *r, const char *path,
 				  size_t path_len, int local);
 

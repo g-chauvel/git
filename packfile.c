@@ -298,6 +298,8 @@ static int unuse_one_window(struct object_database *odb)
 	return 0;
 }
 
+static void clear_delta_base_cache_for_pack(struct packed_git *p);
+
 void close_pack_windows(struct packed_git *p)
 {
 	while (p->windows) {
@@ -357,6 +359,7 @@ static void close_pack_mtimes(struct packed_git *p)
 
 void close_pack(struct packed_git *p)
 {
+	clear_delta_base_cache_for_pack(p);
 	close_pack_windows(p);
 	close_pack_fd(p);
 	close_pack_index(p);
@@ -1217,6 +1220,11 @@ static int in_delta_base_cache(struct packed_git *p, off_t base_offset)
 	return !!get_delta_base_cache_entry(p, base_offset);
 }
 
+int delta_base_cache_has_address(uintptr_t pack_address, off_t base_offset)
+{
+	return in_delta_base_cache((struct packed_git *)pack_address, base_offset);
+}
+
 /*
  * Remove the entry from the cache, but do _not_ free the associated
  * entry data. The caller takes ownership of the "data" buffer, and
@@ -1251,6 +1259,26 @@ static inline void release_delta_base_cache(struct delta_base_cache_entry *ent)
 {
 	free(ent->data);
 	detach_delta_base_cache_entry(ent);
+}
+
+static void clear_delta_base_cache_for_pack(struct packed_git *p)
+{
+	struct list_head *lru, *tmp;
+
+	/*
+	 * Clear entries before this pack can be freed and its address reused.
+	 * The object read lock serializes cache mutation; it does not extend
+	 * the lifetime of p or make close_pack() safe against concurrent
+	 * readers.
+	 */
+	obj_read_lock();
+	list_for_each_safe(lru, tmp, &delta_base_cache_lru) {
+		struct delta_base_cache_entry *entry =
+			list_entry(lru, struct delta_base_cache_entry, lru);
+		if (entry->key.p == p)
+			release_delta_base_cache(entry);
+	}
+	obj_read_unlock();
 }
 
 void clear_delta_base_cache(void)
